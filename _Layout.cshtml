@@ -1,0 +1,111 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>@ViewBag.Title - My ASP.NET Application</title>
+
+    @Styles.Render("~/Content/css")
+    @Scripts.Render("~/bundles/modernizr")
+
+    <style>
+        /* Global body styling */
+        body {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+        }
+
+        /* Main container */
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+
+        h2 {
+            margin-bottom: 25px;
+            font-size: 1.8rem;
+            font-weight: 700;
+        }
+
+        button {
+            background: linear-gradient(90deg, #ff7e5f, #feb47b);
+            border: none;
+            border-radius: 10px;
+            padding: 12px 25px;
+            margin: 10px;
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+            button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 15px rgba(0,0,0,0.2);
+            }
+
+        #status {
+            margin: 15px 0;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        #localAudio {
+            width: 100%;
+            margin-top: 15px;
+            border-radius: 10px;
+        }
+
+        #log {
+            white-space: pre-wrap;
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            margin-top: 20px;
+            height: 150px;
+            overflow-y: scroll;
+            border-radius: 10px;
+            font-size: 0.9rem;
+        }
+
+        @@media (max-width: 480px) {
+            .container {
+                padding: 25px;
+            }
+
+            h2 {
+                font-size: 1.5rem;
+            }
+
+            button {
+                padding: 10px 20px;
+                font-size: 0.9rem;
+            }
+
+            #log {
+                height: 120px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        @RenderBody()
+    </div>
+
+    @Scripts.Render("~/bundles/jquery")
+    @Scripts.Render("~/bundles/bootstrap")
+    @RenderSection("scripts", required: false)
+</body>
+</html>

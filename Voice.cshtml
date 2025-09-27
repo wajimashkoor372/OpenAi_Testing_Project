@@ -1,0 +1,236 @@
+﻿@{
+    ViewBag.Title = "OpenAI Realtime Voice Test";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>@ViewBag.Title</title>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            padding: 20px;
+            background: #f9f9fb;
+        }
+
+        h2 {
+            color: #333;
+            text-align: center;
+        }
+
+        #avatarContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* center avatar and buttons */
+            gap: 12px;
+            margin-top: 10px;
+        }
+
+        svg {
+            width: 300px;
+            height: 380px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        /* ORIGINAL BUTTON STYLE FROM YOUR FIRST CODE */
+        button {
+            padding: 8px 14px;
+            font-size: 14px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            cursor: pointer;
+        }
+
+            button:hover {
+                background: #eee;
+            }
+
+        #status {
+            font-weight: 600;
+            color: #333;
+            margin-left: 10px;
+            align-self: center;
+        }
+    </style>
+</head>
+<body>
+    <h2>@ViewBag.Title</h2>
+
+    <div id="avatarContainer">
+        <!-- Avatar -->
+        <svg id="avatar" viewBox="0 0 200 400">
+            <!-- Body -->
+            <path d="M70,180 Q100,150 130,180 Q135,250 65,250 Z" fill="#6C5CE7" stroke="#2d2b6a" stroke-width="2" />
+            <!-- Arms -->
+            <path d="M50,190 Q40,230 70,230 Q72,190 50,190 Z" fill="#FFDAB9" stroke="#2d2b6a" stroke-width="2" />
+            <path d="M130,190 Q140,230 110,230 Q108,190 130,190 Z" fill="#FFDAB9" stroke="#2d2b6a" stroke-width="2" />
+            <!-- Legs -->
+            <path d="M80,250 Q85,320 95,320 Q100,320 105,250 Z" fill="#B2BEC3" stroke="#2d2b6a" stroke-width="2" />
+            <path d="M115,250 Q120,320 130,320 Q135,320 135,250 Z" fill="#B2BEC3" stroke="#2d2b6a" stroke-width="2" />
+            <!-- Head -->
+            <circle cx="100" cy="100" r="60" fill="#FFDAB9" stroke="#e17055" stroke-width="2" />
+            <!-- Hair -->
+            <path d="M40,80 Q60,20 140,25 Q150,60 130,85 Q100,40 70,85 Q60,60 40,80 Z" fill="#2d3436" stroke="#1a1a1a" stroke-width="2" />
+            <!-- Eyes -->
+            <circle id="eyeLeft" cx="75" cy="100" r="10" fill="#fff" />
+            <circle id="eyeLeftPupil" cx="75" cy="100" r="5" fill="#2d3436" />
+            <circle id="eyeRight" cx="125" cy="100" r="10" fill="#fff" />
+            <circle id="eyeRightPupil" cx="125" cy="100" r="5" fill="#2d3436" />
+            <!-- Blush cheeks -->
+            <circle cx="60" cy="120" r="6" fill="#ff6b81" opacity="0.5" />
+            <circle cx="140" cy="120" r="6" fill="#ff6b81" opacity="0.5" />
+            <!-- Mouth -->
+            <path id="mouth" d="M85 135 Q100 145 115 135" stroke="#d63031" stroke-width="2" fill="transparent" />
+            <!-- Eyebrows -->
+            <path d="M65 90 Q75 85 85 90" stroke="#2d3436" stroke-width="2" fill="none" />
+            <path d="M115 90 Q125 85 135 90" stroke="#2d3436" stroke-width="2" fill="none" />
+        </svg>
+
+        <!-- Controls below avatar -->
+        <div class="controls">
+            <button id="startBtn">Start</button>
+            <button id="stopBtn" disabled>Stop</button>
+            <div id="status">Idle</div>
+        </div>
+    </div>
+
+    <audio id="localAudio" autoplay muted style="display:none;"></audio>
+    <audio id="remoteAudio" autoplay></audio>
+
+    <script>
+        const startBtn = document.getElementById("startBtn");
+        const stopBtn = document.getElementById("stopBtn");
+        const statusEl = document.getElementById("status");
+        const mouthEl = document.getElementById("mouth");
+        const eyeLeft = document.getElementById("eyeLeft");
+        const eyeRight = document.getElementById("eyeRight");
+
+        let pc = null, localStream = null;
+        let audioCtx = null, analyser = null, sourceNode = null;
+        let rafId = null, blinkIntervalId = null;
+
+        async function getToken() {
+            const resp = await fetch('/Home/Session', { method: 'POST' });
+            if (!resp.ok) throw new Error(await resp.text());
+            const json = await resp.json();
+            return json?.client_secret?.value || json?.token;
+        }
+
+        async function startRealtime() {
+            try {
+                statusEl.textContent = 'Obtaining token...';
+                const token = await getToken();
+
+                pc = new RTCPeerConnection();
+
+                pc.ontrack = (e) => {
+                    document.getElementById("remoteAudio").srcObject = e.streams[0];
+                    setupAnalyzerFromStream(e.streams[0]);
+                };
+
+                pc.ondatachannel = (e) => {
+                    const dc = e.channel;
+                    dc.onmessage = (ev) => {
+                        try {
+                            const data = JSON.parse(ev.data);
+                            if (data.type === 'transcript') {
+                                pulseMouthForText();
+                            }
+                        } catch { }
+                    };
+                };
+                pc.createDataChannel("oai-events");
+
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+                document.getElementById("localAudio").srcObject = localStream;
+
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                const sdpResp = await fetch("https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": "Bearer " + token,
+                        "Content-Type": "application/sdp"
+                    },
+                    body: offer.sdp
+                });
+
+                const answer = await sdpResp.text();
+                await pc.setRemoteDescription({ type: "answer", sdp: answer });
+
+                statusEl.textContent = "Connected — speak now";
+                startBlinking();
+            } catch (err) {
+                statusEl.textContent = "Error: " + err.message;
+                cleanup();
+            }
+        }
+
+        function setupAnalyzerFromStream(stream) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            sourceNode = audioCtx.createMediaStreamSource(stream);
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 512;
+            sourceNode.connect(analyser);
+            animateMouth();
+        }
+
+        function getVolume() {
+            const data = new Uint8Array(analyser.fftSize);
+            analyser.getByteTimeDomainData(data);
+            let sum = 0;
+            for (let v of data) { let x = (v - 128) / 128; sum += x * x; }
+            return Math.sqrt(sum / data.length);
+        }
+
+        function animateMouth() {
+            const v = getVolume();
+            if (v < 0.015) setMouthClosed();
+            else if (v < 0.05) setMouthSmallOpen();
+            else setMouthWideOpen();
+            rafId = requestAnimationFrame(animateMouth);
+        }
+
+        function setMouthClosed() { mouthEl.setAttribute("d", "M85 135 Q100 140 115 135"); }
+        function setMouthSmallOpen() { mouthEl.setAttribute("d", "M85 133 Q100 143 115 133"); }
+        function setMouthWideOpen() { mouthEl.setAttribute("d", "M85 130 Q100 150 115 130"); }
+        function pulseMouthForText() { setMouthSmallOpen(); setTimeout(setMouthClosed, 230); }
+
+        function startBlinking() {
+            blinkIntervalId = setInterval(() => {
+                eyeLeft.setAttribute("r", "2");
+                eyeRight.setAttribute("r", "2");
+                setTimeout(() => {
+                    eyeLeft.setAttribute("r", "10");
+                    eyeRight.setAttribute("r", "10");
+                }, 150);
+            }, 4000 + Math.random() * 2000);
+        }
+
+        function cleanup() {
+            if (rafId) cancelAnimationFrame(rafId);
+            if (blinkIntervalId) clearInterval(blinkIntervalId);
+            if (pc) { pc.close(); pc = null; }
+            if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+            statusEl.textContent = "Idle";
+        }
+
+        startBtn.onclick = () => { startBtn.disabled = true; stopBtn.disabled = false; startRealtime(); };
+        stopBtn.onclick = () => { stopBtn.disabled = true; startBtn.disabled = false; cleanup(); };
+    </script>
+</body>
+</html>
